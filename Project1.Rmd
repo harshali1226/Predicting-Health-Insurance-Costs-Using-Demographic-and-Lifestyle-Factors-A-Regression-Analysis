@@ -1,0 +1,155 @@
+---
+title: "Project"
+author: "Harshali Gaikwad"
+date: "2024-11-09"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,message = FALSE, warning = FALSE)
+```
+
+
+```{r}
+library(corrplot)
+library(lmtest)
+library(car)
+library(MASS)
+library(lmtest)
+
+
+medical_insurance_data <- read.csv("insurance.csv", header = TRUE)
+head(medical_insurance_data)
+```
+Lets perform EDA on the data
+                                                                                                                   
+```{r}
+hist(medical_insurance_data$age, 
+     main = "Distribution of Age",
+     xlab = "Age",
+     ylab = "Count",
+     col = "skyblue",
+     border = "white")
+
+# Calculate the counts for each sex category
+sex_counts <- table(medical_insurance_data$sex)
+
+# Define colors for each slice of the pie
+colors <- c("#FF9999", "#66B2FF")
+
+# Calculate percentages for each category
+percentages <- round(100 * sex_counts / sum(sex_counts), 1)
+
+# Create labels that include both the name and percentage
+labels <- paste0(names(sex_counts), ": ", percentages, "%")
+
+# Plot the pie chart
+pie(sex_counts,
+    main = "Sex Distribution",
+    col = colors,
+    labels = labels,
+    cex = 1.2,
+    radius = 0.8)
+
+# Add a legend for better interpretation
+legend("topright", legend = paste0(names(sex_counts), " (", sex_counts, ")"),
+       fill = colors, cex = 0.8, bty = "n")
+
+hist(medical_insurance_data$bmi, 
+     main = "Distribution of BMI",
+     xlab = "BMI",
+     ylab = "Count",
+     col = "darkgreen",
+     border = "white")
+```
+
+
+
+```{r}
+medical_insurance_data$sex <- ifelse(medical_insurance_data$sex == "male", 1, 0)
+medical_insurance_data$smoker <- ifelse(medical_insurance_data$smoker == "yes", 1, 0)
+medical_insurance_data$region <- as.numeric(factor(medical_insurance_data$region))
+
+head(medical_insurance_data)
+
+correlation_matrix <- cor(medical_insurance_data)
+corrplot(correlation_matrix, method = "color", type = "full", 
+         col = colorRampPalette(c("blue", "white", "red"))(200), 
+         title = "Correlation Heatmap", 
+         mar = c(0,0,1,0))
+
+pairs(medical_insurance_data)
+
+
+```
+
+```{r}
+model1 <- lm(charges ~ .,data = medical_insurance_data)
+summary(model1)
+```
+
+From the summary of the model we find that the attribute 'sex' is not significant so we will try a model without this attribute.
+
+```{r}
+model2 <- lm(charges ~ age + bmi + children + smoker + region, data = medical_insurance_data)
+summary(model2)
+```
+
+#```{r}
+model3 <- lm(charges ~ age + smoker + bmi + bmi * smoker + children + region, data = medical_insurance_data)
+summary(model3)
+#```
+
+```{r}
+model3 <- lm(charges ~ age + smoker + bmi + sex + sex * smoker + children + region, data = medical_insurance_data)
+summary(model3)
+```
+
+We get the best model when we included the interaction term. Lets check the autocorrelation test
+```{r}
+dwtest <- dwtest(model3)
+dwtest
+
+residuals <- residuals(model3)
+
+acf(residuals, main="ACF of Residuals")
+```
+
+
+The diagram shows that there is no autocorrelation.Moreover, the dwtest tell us that there is no significant autocorrelation between the residuals of the model.
+
+Since there is no autocorrelation, lets check for multicollinearity using the VIF test
+
+```{r}
+vif(model3)
+```
+
+Looking at the vif we find that there is no multicollinearity. \
+Now we check for the homoscedasticity by plotting the model.
+
+```{r}
+par(mfrow=c(2,2))
+plot(model3)
+```
+
+
+```{r}
+bc <- boxcox(model3)
+lambda <- bc$x[which.max(bc$y)] 
+
+if (abs(lambda) < 1e-4) {  # If lambda is close to 0
+    transformed_charges <- log(medical_insurance_data$charges)
+} else {
+    transformed_charges <- (medical_insurance_data$charges^lambda - 1) / lambda
+}
+
+model3_transformed <- lm(transformed_charges ~ age + smoker + bmi + sex + sex * smoker + children + region, data = medical_insurance_data)
+
+summary(model3_transformed)
+
+plot(model3_transformed)
+```
+
+As we can see in the standardized residual vs fitted plot, it is better than the previous models plot. It is some what randomly distributed.
